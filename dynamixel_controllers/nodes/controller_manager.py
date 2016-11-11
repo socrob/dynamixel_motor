@@ -175,7 +175,7 @@ class ControllerManager:
         for i,(controller_name,deps,kls) in enumerate(self.waiting_meta_controllers):
             if not set(deps).issubset(self.controllers.keys()):
                 controllers_still_waiting.append(self.waiting_meta_controllers[i])
-                rospy.logwarn('[%s] not all dependencies started, still waiting for %s...' % (controller_name, str(list(set(deps).difference(self.controllers.keys())))))
+                rospy.logdebug('[%s] not all dependencies started, still waiting for %s...' % (controller_name, str(list(set(deps).difference(self.controllers.keys())))))
             else:
                 dependencies = [self.controllers[dep_name] for dep_name in deps]
                 controller = kls(controller_name, dependencies)

@@ -53,7 +53,7 @@ from trajectory_msgs.msg import JointTrajectory
 from control_msgs.msg import FollowJointTrajectoryAction
 from control_msgs.msg import FollowJointTrajectoryFeedback
 from control_msgs.msg import FollowJointTrajectoryResult
-
+from sensor_msgs.msg import JointState
 
 class Segment():
     def __init__(self, num_joints):
@@ -67,6 +67,9 @@ class JointTrajectoryActionController():
         self.update_rate = 1000
         self.state_update_rate = 50
         self.trajectory = []
+        
+        # flag used to check if the arm is moving
+        self.is_arm_moving = False
         
         self.controller_namespace = controller_namespace
         self.joint_names = [c.joint_name for c in controllers]
@@ -90,6 +93,8 @@ class JointTrajectoryActionController():
         self.joint_to_idx = dict(zip(self.joint_names, range(self.num_joints)))
 
     def initialize(self):
+	# subscribe to joint states to check if the arm is moving, based on velocities of each joint
+        rospy.Subscriber("/joint_states", JointState, self.jointStatesCallback, queue_size=1)
         ns = self.controller_namespace + '/joint_trajectory_action_node/constraints'
         self.goal_time_constraint = rospy.get_param(ns + '/goal_time', 0.0)
         self.stopped_velocity_tolerance = rospy.get_param(ns + '/stopped_velocity_tolerance', 0.01)
@@ -114,6 +119,13 @@ class JointTrajectoryActionController():
         
         return True
 
+
+    def jointStatesCallback(self, msg):
+        one_motor_at_least_is_moving = False
+        for each in msg.velocity:
+            if each != 0.0:
+                one_motor_at_least_is_moving = True
+        self.is_arm_moving = one_motor_at_least_is_moving
 
     def start(self):
         self.running = True
@@ -321,7 +333,11 @@ class JointTrajectoryActionController():
                     return
                     
         # let motors roll for specified amount of time
-        rospy.sleep(self.goal_time_constraint)
+        # rospy.sleep(self.goal_time_constraint)
+        # instead of sleep, check if motors are moving
+        while self.is_arm_moving:
+            print 'arm is moving'
+            rospy.sleep(0.3)
         
         for i, j in enumerate(self.joint_names):
             rospy.logdebug('desired pos was %f, actual pos is %f, error is %f' % (trajectory[-1].positions[i], self.joint_states[j].current_pos, self.joint_states[j].current_pos - trajectory[-1].positions[i]))

@@ -91,6 +91,10 @@ class SerialProxy():
         self.current_state = MotorStateList()
         self.num_ping_retries = 5
         
+        self.offsets = rospy.get_param('dynamixel/%s/offsets' %(self.port_namespace), None)
+        if self.offsets is None:
+            rospy.logwarn('No calibration offsets given for %s', self.port_namespace)
+
         self.motor_states_pub = rospy.Publisher('motor_states/%s' % self.port_namespace, MotorStateList, queue_size=1)
         self.diagnostics_pub = rospy.Publisher('/diagnostics', DiagnosticArray, queue_size=1)
 
@@ -224,6 +228,8 @@ class SerialProxy():
                     state = self.dxl_io.get_feedback(motor_id)
                     if state:
                         motor_states.append(MotorState(**state))
+                        if self.offsets is not None:
+                            motor_states[-1].position = motor_states[-1].position - self.offsets[str(motor_id)]
                         if dynamixel_io.exception: raise dynamixel_io.exception
                 except dynamixel_io.FatalErrorCodeError, fece:
                     rospy.logerr(fece)

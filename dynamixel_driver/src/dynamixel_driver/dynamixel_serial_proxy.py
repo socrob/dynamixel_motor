@@ -107,6 +107,7 @@ class SerialProxy():
             return False
         self.offsets[req.motor_id] = req.offset
         rospy.loginfo('Received request for new motor offset: {}/{} offset set to {}'.format(self.port_namespace, req.motor_id, req.offset))
+        self.dxl_io.set_offset(req.motor_id, req.offset)
         return True
 
     def connect(self):
@@ -159,8 +160,9 @@ class SerialProxy():
         rospy.set_param('dynamixel/%s/%d/degrees_per_encoder_tick' %(self.port_namespace, motor_id), range_degrees / encoder_resolution)
         rospy.set_param('dynamixel/%s/%d/radians_per_encoder_tick' %(self.port_namespace, motor_id), range_radians / encoder_resolution)
 
-        # keep one value for applying joint offsets
-        self.motor_encoder_ticks_per_radian[motor_id] = rospy.get_param('dynamixel/%s/%d/encoder_ticks_per_radian' %(self.port_namespace, motor_id))
+        # save offset necessary values in dxl_io
+        self.dxl_io.set_encoder_ticks_per_radian(motor_id, rospy.get_param('dynamixel/%s/%d/encoder_ticks_per_radian' %(self.port_namespace, motor_id)))
+        self.dxl_io.set_offset(motor_id, self.offsets[motor_id])
         
         # keep some parameters around for diagnostics
         self.motor_static_info[motor_id] = {}
@@ -242,8 +244,6 @@ class SerialProxy():
                     state = self.dxl_io.get_feedback(motor_id)
                     if state:
                         motor_states.append(MotorState(**state))
-                        if self.offsets is not None:
-                            motor_states[-1].position = motor_states[-1].position - self.offsets[motor_id]*self.motor_encoder_ticks_per_radian[motor_id]
                         if dynamixel_io.exception: raise dynamixel_io.exception
                 except dynamixel_io.FatalErrorCodeError, fece:
                     rospy.logerr(fece)

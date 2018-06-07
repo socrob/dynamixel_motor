@@ -70,6 +70,9 @@ class DynamixelIO(object):
         except SerialOpenError:
            raise SerialOpenError(port, baudrate)
 
+        self.offsets = {}
+        self.encoder_ticks_per_radian = {}
+
     def __del__(self):
         """ Destructor calls DynamixelIO.close """
         self.close()
@@ -528,6 +531,11 @@ class DynamixelIO(object):
         Set the servo with servo_id to the specified goal position.
         Position value must be positive.
         """
+        try:
+            position = int(position + (self.offsets[servo_id]*self.encoder_ticks_per_radian[servo_id]))
+        except Exception:
+            print 'Error applying offset in set_position {}'.format(servo_id)
+
         loVal = int(position % 256)
         hiVal = int(position >> 8)
 
@@ -603,6 +611,11 @@ class DynamixelIO(object):
         Set the servo with servo_id to specified position and speed.
         Speed can be negative only if the dynamixel is in "freespin" mode.
         """
+        try:
+            position = int(position + (self.offsets[servo_id]*self.encoder_ticks_per_radian[servo_id]))
+        except Exception:
+            print 'Error applying offset in set_position_and_speed {}'.format(servo_id)
+
         # split speed into 2 bytes
         if speed >= 0:
             loSpeedVal = int(speed % 256)
@@ -728,6 +741,10 @@ class DynamixelIO(object):
         for vals in valueTuples:
             sid = vals[0]
             position = vals[1]
+            try:
+                position = int(position +  (self.offsets[sid]*self.encoder_ticks_per_radian[sid]))
+            except Exception:
+                print 'Error applying offset in set_multi_position {}'.format(sid)
             # split position into 2 bytes
             loVal = int(position % 256)
             hiVal = int(position >> 8)
@@ -792,6 +809,10 @@ class DynamixelIO(object):
         for vals in valueTuples:
             sid = vals[0]
             position = vals[1]
+            try:
+                position = int(position + (self.offsets[sid]*self.encoder_ticks_per_radian[sid]))
+            except Exception:
+                print 'Error applying offset in set_multi_position_and_speed {}'.format(sid)
             speed = vals[2]
 
             # split speed into 2 bytes
@@ -878,6 +899,10 @@ class DynamixelIO(object):
         if response:
             self.exception_on_error(response[4], servo_id, 'fetching present position')
         position = response[5] + (response[6] << 8)
+        try:
+            position = int(position - (self.offsets[servo_id]*self.encoder_ticks_per_radian[servo_id]))
+        except Exception:
+            print 'Error applying offset in get_position {}'.format(servo_id)
         return position
 
     def get_speed(self, servo_id):
@@ -935,6 +960,11 @@ class DynamixelIO(object):
             # extract data values from the raw data
             goal = response[5] + (response[6] << 8)
             position = response[11] + (response[12] << 8)
+            try:
+                position = int(position - (self.offsets[servo_id]*self.encoder_ticks_per_radian[servo_id]))
+            except Exception:
+                print 'Error applying offset in get_feedback {}'.format(servo_id)
+
             error = position - goal
             speed = response[13] + ( response[14] << 8)
             if speed > 1023: speed = 1023 - speed
@@ -972,6 +1002,11 @@ class DynamixelIO(object):
 
         return bool(response[5])
 
+    def set_offset(self, servo_id, value):
+        self.offsets[servo_id] = value
+
+    def set_encoder_ticks_per_radian(self, servo_id, value):
+        self.encoder_ticks_per_radian[servo_id] = value
 
     def exception_on_error(self, error_code, servo_id, command_failed):
         global exception

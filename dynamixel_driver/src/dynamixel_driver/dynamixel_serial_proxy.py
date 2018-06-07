@@ -63,6 +63,8 @@ from diagnostic_msgs.msg import KeyValue
 from dynamixel_msgs.msg import MotorState
 from dynamixel_msgs.msg import MotorStateList
 
+from dynamixel_driver.srv import SetMotorOffset
+
 class SerialProxy():
     def __init__(self,
                  port_name='/dev/ttyUSB0',
@@ -91,12 +93,21 @@ class SerialProxy():
         self.current_state = MotorStateList()
         self.num_ping_retries = 5
         
-        self.offsets = rospy.get_param('dynamixel/%s/offsets' %(self.port_namespace), None)
-        if self.offsets is None:
-            rospy.logwarn('No calibration offsets given for %s', self.port_namespace)
+        self.offsets = dict((key, 0.0) for key in range(self.min_motor_id, self.max_motor_id+1))
+        self.motor_encoder_ticks_per_radian = dict((key, 0.0) for key in range(self.min_motor_id, self.max_motor_id+1))
 
         self.motor_states_pub = rospy.Publisher('motor_states/%s' % self.port_namespace, MotorStateList, queue_size=1)
         self.diagnostics_pub = rospy.Publisher('/diagnostics', DiagnosticArray, queue_size=1)
+
+        self.offsets_srv = rospy.Service('dynamixel/%s/set_offset' %(self.port_namespace), SetMotorOffset, self.offsets_callback)
+
+    def offsets_callback(self, req):
+        if not self.offsets.has_key(req.motor_id):
+            rospy.logerr('Motor id is out of range: {}. Available motors: {}'.format(req.motor_id, list(int(k) for k in self.offsets.keys())))
+            return False
+        self.offsets[req.motor_id] = req.offset
+        rospy.loginfo('Received request for new motor offset: {}/{} offset set to {}'.format(self.port_namespace, req.motor_id, req.offset))
+        return True
 
     def connect(self):
         try:
@@ -147,6 +158,9 @@ class SerialProxy():
         rospy.set_param('dynamixel/%s/%d/encoder_ticks_per_radian' %(self.port_namespace, motor_id), encoder_resolution / range_radians)
         rospy.set_param('dynamixel/%s/%d/degrees_per_encoder_tick' %(self.port_namespace, motor_id), range_degrees / encoder_resolution)
         rospy.set_param('dynamixel/%s/%d/radians_per_encoder_tick' %(self.port_namespace, motor_id), range_radians / encoder_resolution)
+
+        # keep one value for applying joint offsets
+        self.motor_encoder_ticks_per_radian[motor_id] = rospy.get_param('dynamixel/%s/%d/encoder_ticks_per_radian' %(self.port_namespace, motor_id))
         
         # keep some parameters around for diagnostics
         self.motor_static_info[motor_id] = {}
@@ -229,7 +243,7 @@ class SerialProxy():
                     if state:
                         motor_states.append(MotorState(**state))
                         if self.offsets is not None:
-                            motor_states[-1].position = motor_states[-1].position - self.offsets[str(motor_id)]
+                            motor_states[-1].position = motor_states[-1].position - self.offsets[motor_id]*self.motor_encoder_ticks_per_radian[motor_id]
                         if dynamixel_io.exception: raise dynamixel_io.exception
                 except dynamixel_io.FatalErrorCodeError, fece:
                     rospy.logerr(fece)
